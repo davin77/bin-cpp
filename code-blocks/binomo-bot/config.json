@@ -1,0 +1,42 @@
+{
+	"named_pipe": "binomo_api_bot",
+	"symbol_hst_suffix":"-BIN",
+	"sert_file": "curl-ca-bundle.crt",
+	"cookie_file": "binomo.cookie",
+	"candles": 14400,
+	"path": "C:\\Users\\user\\AppData\\Roaming\\MetaQuotes\\Terminal\\2E8DC23981084565FA3E19C061F586B2\\history\\RoboForex-Demo",
+	"symbols": [
+		{
+			"symbol":"ZCRYIDX",
+			"period":60
+		},
+		{
+			"symbol":"BTCUSD",
+			"period":60
+		},
+		{
+			"symbol":"BTCLTC",
+			"period":60
+		},
+		{
+			"symbol":"AUDNZD",
+			"period":60
+		},
+		{
+			"symbol":"GBPNZD",
+			"period":60
+		},
+		{
+			"symbol":"EURNZD",
+			"period":60
+		},
+		{
+			"symbol":"EURCAD(OTC)",
+			"period":60
+		},
+		{
+			"symbol":"EURUSD(OTC)",
+			"period":60
+		}
+	]
+}
