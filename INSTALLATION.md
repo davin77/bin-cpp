@@ -57,6 +57,7 @@ NZDJPY
 	"symbol_hst_suffix":"-BIN",
 	"sert_file": "curl-ca-bundle.crt",
 	"cookie_file": "binomo.cookie",
+	"volume_mode":2,
 	"candles": 14400,
 	"path": "C:\\Users\\user\\AppData\\Roaming\\MetaQuotes\\Terminal\\2E8DC23981084565FA3E19C061F586B2\\history\\RoboForex-Demo",
 	"symbols": [
@@ -91,6 +92,7 @@ NZDJPY
 * symbol_hst_suffix - Суффикс для имен файлов котировок для МТ4. Нужен, чтобы файлы котировок binomo можно было отличить от других котировок. Имя файла формруется так: имя символа + суффикс. Например: 'BTCUSD' + '-BIN' = 'BTCUSD-BIN'
 * sert_file - Имя файла сертификата для работы с HTTPS. Можно оставить без изменений.
 * cookie_file - Имя файла куков. Можно оставить без изменений.
+* volume_mode - Режим работы с объемом. 0 - без тикового объема, 1 - расчет тикового объема как количество тиков, 2 - расчет тикового объема как взвешенный подсчет тиков.
 * candles - Количество баров исторических данных.
 * path - Путь к папке, где МТ4 хранит файлы котировок. Обычно это папка <католог данных>\history\<имя сервера брокера>. Каталог данных можно открыть из МТ4, нажав "Файл->Открыть каталог данных". ![doc/config-instruction-1.png](doc/config-instruction-1.png) ![doc/config-instruction-2.png](doc/config-instruction-2.png) ![doc/config-instruction-3.png](doc/config-instruction-3.png)
 * symbols - Массив потоков котировок. Данный параметр нужен для настройки подписки бота на поток котировок. Каждый элемент массива содержит два параметра: symbol и period, где первый параметр - *имя символа*, а второй параметр - период баров *в секундах* (60 - это 1 минута).

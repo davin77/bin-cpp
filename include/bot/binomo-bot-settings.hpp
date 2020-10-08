@@ -45,7 +45,10 @@ namespace binomo_bot {
         uint32_t max_precisions = 6;                        /**< Максимальная точность котировок, выступает в роли ограничителя */
         int64_t timezone = 0;                               /**< Часовой пояс - смещение метки времени котировок на указанное число секунд */
         bool demo = true;                                   /**< Флаг демо аккаунта */
+        int volume_mode = 0;                                /**< Режим работы объемов (0 - отключено, 1 - подсчет тиков, 2 - взвешенный подсчет тиков) */
+
         bool is_error = false;
+
 
         Settings() {};
 
@@ -80,6 +83,7 @@ namespace binomo_bot {
             /* разбираем json сообщение */
             try {
                 if(j["demo"] != nullptr) demo = j["demo"];
+                if(j["volume_mode"] != nullptr) volume_mode = j["volume_mode"];
                 if(j["named_pipe"] != nullptr) named_pipe = j["named_pipe"];
                 if(j["symbol_hst_suffix"] != nullptr) symbol_hst_suffix = j["symbol_hst_suffix"];
                 if(j["candles"] != nullptr) candles = j["candles"];

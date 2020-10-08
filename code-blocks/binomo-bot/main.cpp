@@ -6,8 +6,8 @@
 
 #include "bot\binomo-bot.hpp"
 
-#define PROGRAM_VERSION "1.0"
-#define PROGRAM_DATE "02.10.2020"
+#define PROGRAM_VERSION "1.1"
+#define PROGRAM_DATE "08.10.2020"
 
 int main(int argc, char **argv) {
     std::cout << "binomo bot " << PROGRAM_VERSION << " ";

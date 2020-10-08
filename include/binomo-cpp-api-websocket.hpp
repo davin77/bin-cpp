@@ -75,6 +75,11 @@ namespace binomo_api {
         std::atomic<bool> is_close_connection;  /**< Флаг для закрытия соединения */
         std::atomic<bool> is_open;
 
+        std::atomic<int> volume_mode = ATOMIC_VAR_INIT(0);
+        const int MODE_NO_VOLUME = 0;
+        const int MODE_VOLUME_ACC = 1;
+        const int MODE_VOLUME_WEIGHT_ACC = 2;
+
         std::string error_message;
         std::recursive_mutex error_message_mutex;
         std::recursive_mutex array_offset_timestamp_mutex;
@@ -153,24 +158,20 @@ namespace binomo_api {
                             std::string str_iso = j_element["created_at"];
                             xtime::DateTime date_time;
                             if(!xtime::convert_iso(str_iso, date_time)) continue;
-                            tick.timestamp = date_time.get_ftimestamp();
-
-                            /* замеряем смещение времени */
-                            const xtime::ftimestamp_t pc_time = xtime::get_ftimestamp();
-                            const xtime::ftimestamp_t offset_time = tick.timestamp - pc_time;
-                            update_offset_timestamp(offset_time);
+                            const double ftimestamp = date_time.get_ftimestamp();
+                            tick.timestamp = date_time.get_timestamp();
 
                             /* проверяем, не поменялась ли метка времени */
-                            if(last_timestamp < tick.timestamp) {
+                            if(last_timestamp < ftimestamp) {
 
                                 /* если метка времени поменялась, найдем время сервера */
                                 xtime::ftimestamp_t pc_timestamp = xtime::get_ftimestamp();
-                                xtime::ftimestamp_t offset_timestamp = tick.timestamp - pc_timestamp;
+                                xtime::ftimestamp_t offset_timestamp = ftimestamp - pc_timestamp;
                                 update_offset_timestamp(offset_timestamp);
-                                last_timestamp = tick.timestamp;
+                                last_timestamp = ftimestamp;
 
                                 /* запоминаем последнюю метку времени сервера */
-                                last_server_timestamp = tick.timestamp;
+                                last_server_timestamp = ftimestamp;
                             }
 
                             /* обрабатываем функцию обратного вызова поступления тика */
@@ -188,34 +189,87 @@ namespace binomo_api {
 
                             std::lock_guard<std::mutex> lock(candles_mutex);
                             for(auto &p : list_period) {
-                                const xtime::timestamp_t timestamp = (xtime::timestamp_t)tick.timestamp;
-                                const xtime::timestamp_t bar_timestamp = (timestamp - (timestamp % (p)));
+
+                                /* в ходе наблюдений было обнаружено,
+                                 * что 0-секунда считается прыдудщим баром, а не новым
+                                 * поэтому нужно вычесть 1 секунду из метки времени
+                                 */
+                                const xtime::timestamp_t timestamp = tick.timestamp - 1;
+
+                                /* в ходе наблюдений было обнаружено,
+                                 * что время бара взято как время окончания бара
+                                 * а не время начала
+                                 */
+                                const xtime::timestamp_t bar_timestamp = (timestamp - (timestamp % (p))) + p;
+
                                 auto it_symbol = candles.find(tick.symbol);
                                 if(it_symbol == candles.end()) {
-                                    CANDLE candle(tick.price,tick.price,tick.price,tick.price,bar_timestamp);
+                                    /* если символ не найден, значит бара вообще нет. Инициализируем */
+                                    CANDLE candle(tick.price,tick.price,tick.price,tick.price, bar_timestamp);
+                                    if(volume_mode == MODE_VOLUME_ACC) {
+                                        candle.volume = 1;
+                                    } else
+                                    if(volume_mode == MODE_VOLUME_WEIGHT_ACC) {
+                                        candle.volume = 0;
+                                    }
                                     candles[tick.symbol][(p)][bar_timestamp] = candle;
                                     if(on_candle != nullptr) on_candle(tick.symbol, candle, p,  false);
                                 } else {
+                                    /* символ найдет, ищем период */
                                     auto it_period = it_symbol->second.find(p);
                                     if(it_period == it_symbol->second.end()) {
+                                        /* период не найден, значит бара вообще нет. Инициализируем */
                                         CANDLE candle(tick.price,tick.price,tick.price,tick.price,bar_timestamp);
+                                        if(volume_mode == MODE_VOLUME_ACC) {
+                                            candle.volume = 1;
+                                        } else
+                                        if(volume_mode == MODE_VOLUME_WEIGHT_ACC) {
+                                            candle.volume = 0;
+                                        }
                                         candles[tick.symbol][(p)][bar_timestamp] = candle;
                                         if(on_candle != nullptr) on_candle(tick.symbol, candle, p, false);
                                     } else {
-                                        if(it_period->second.find(bar_timestamp) == it_period->second.end()) {
+                                        /* период найдет, ищем бар */
+                                        auto it_last_candle = it_period->second.find(bar_timestamp);
+                                        if(it_last_candle == it_period->second.end()) {
+                                            /* бар не найден */
                                             if(it_period->second.size() > 0) {
+                                                /* если данные уже есть */
                                                 auto it_candle = it_period->second.begin();
+                                                /* получаем последний бар, вызываем функцию обратного вызова */
                                                 std::advance(it_candle, it_period->second.size() - 1);
                                                 if(on_candle != nullptr) on_candle(tick.symbol, it_candle->second, p, true);
                                             }
+                                            /* добавляем бар */
                                             CANDLE candle(tick.price,tick.price,tick.price,tick.price,bar_timestamp);
+                                            if(volume_mode == MODE_VOLUME_ACC) {
+                                                candle.volume = 1;
+                                            } else
+                                            if(volume_mode == MODE_VOLUME_WEIGHT_ACC) {
+                                                candle.volume = 0;
+                                            }
                                             candles[tick.symbol][p][bar_timestamp] = candle;
                                             if(on_candle != nullptr) on_candle(tick.symbol, candle, p, false);
                                         } else {
-                                            auto &candle = candles[tick.symbol][p][bar_timestamp];
+                                            auto &candle = it_last_candle->second;
+                                            if(volume_mode == MODE_VOLUME_ACC) {
+                                                candle.volume += 1.0d;
+                                            } else
+                                            if(volume_mode == MODE_VOLUME_WEIGHT_ACC) {
+                                                if(candle.volume == 0) {
+                                                    auto it_candle = it_period->second.begin();
+                                                    /* получаем последний бар, вызываем функцию обратного вызова */
+                                                    std::advance(it_candle, it_period->second.size() - 1);
+                                                    const double diff = std::abs(tick.price - it_candle->second.close);
+                                                    candle.volume += (std::pow(10.0d, tick.precision) * diff + 0.5d);
+                                                } else {
+                                                    const double diff = std::abs(tick.price - candle.close);
+                                                    candle.volume += (std::pow(10.0d, tick.precision) * diff + 0.5d);
+                                                }
+                                            }
                                             candle.close = tick.price;
                                             if(tick.price > candle.high) candle.high = tick.price;
-                                            else if(tick.price < candle.low) candle.low = tick.price;
+                                            if(tick.price < candle.low) candle.low = tick.price;
                                             if(on_candle != nullptr) on_candle(tick.symbol, candle, p, false);
                                         }
                                     }
@@ -614,6 +668,9 @@ namespace binomo_api {
             return true;
         }
 
+        void set_volume_mode(const int value) {
+            volume_mode = value;
+        }
 #if(0)
 		/** \brief Получить количество знаков после запятой
          * \param symbol Имя символа

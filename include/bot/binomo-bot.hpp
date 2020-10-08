@@ -141,6 +141,7 @@ namespace binomo_bot {
 			{
 				std::lock_guard<std::mutex> lock(candlestick_streams_mutex);
 				candlestick_streams = std::make_shared<binomo_api::BinomoApiPriceStream<>>(settings.sert_file);
+				candlestick_streams->set_volume_mode(settings.volume_mode);
 			}
 
             /* проверяем параметры символов */
@@ -241,44 +242,51 @@ namespace binomo_bot {
                         /* проверяем наличие инициализации исторических данных */
                         if(is_init_mql_history[i] == false) continue;
 
+                        /* получаем последнюю метку времени исторических данных */
+                        xtime::timestamp_t last_timestamp = 0;
+                        {
+                            std::lock_guard<std::mutex> lock(mql_history_mutex);
+                            last_timestamp = mql_history[i]->get_last_timestamp();
+                        }
+
                         /* проверяем, была ли только что загрузка исторических данных */
                         if(is_once_mql_history[i] == false) {
-                            /* получаем последнюю метку времени исторических данных */
-                            xtime::timestamp_t last_timestamp = 0;
-                            {
-                                std::lock_guard<std::mutex> lock(mql_history_mutex);
-                                last_timestamp = mql_history[i]->get_last_timestamp();
-                            }
-
+                            ///std::cout << "TIME once last_timestamp " << xtime::get_str_date_time(last_timestamp) << std::endl;
+                            ///std::cout << "TIME once candle.timestamp " << xtime::get_str_date_time(candle.timestamp) << " close_candle " << close_candle << std::endl;
                             /* проверяем, не успел ли прийти новый бар,
                              * пока мы загружали исторические данных
                              */
                             if(candle.timestamp > last_timestamp) {
-                                /* добавляем пропущенные исторические данные */
-                                const xtime::timestamp_t step_time = period * xtime::SECONDS_IN_MINUTE;
-                                for(xtime::timestamp_t t = last_timestamp; t < candle.timestamp; t += step_time) {
-                                    binomo_api::common::Candle old_candle = candlestick_streams->get_timestamp_candle(symbol, period, t);
-                                    std::lock_guard<std::mutex> lock(mql_history_mutex);
+                                /* добавляем пропущенные исторические данные, не включая текущий бар */
+                                const xtime::timestamp_t step_time = period;// * xtime::SECONDS_IN_MINUTE;
 
-                                    /* если бар есть в истории потока котировок, то загрузим данные. Иначе пропускаем */
-                                    if(old_candle.close != 0 && old_candle.timestamp == t) {
-                                        mql_history[i]->add_new_candle(old_candle);
-                                        //if(symbol == "EURUSD(OTC)") std::cout << "add_new_candle " << xtime::get_str_date_time(old_candle.timestamp) << std::endl;
-                                    }
+                                //std::cout << "step_time " << step_time << std::endl;
+
+                                for(xtime::timestamp_t t = last_timestamp; t < candle.timestamp; t += step_time) {
+                                    binomo_api::common::Candle streams_old_candle = candlestick_streams->get_timestamp_candle(symbol, period, t);
+                                    std::lock_guard<std::mutex> lock(mql_history_mutex);
+                                    mql_history[i]->add_new_candle_with_memory(streams_old_candle);
+                                    ///std::cout << "TIME once " << xtime::get_str_date_time(t) << std::endl;
+                                }
+                            }
+                            {
+                                std::lock_guard<std::mutex> lock(mql_history_mutex);
+                                mql_history[i]->update_candle_with_memory(candle);
+                                if(close_candle) {
+                                    mql_history[i]->add_new_candle_with_memory(candle);
                                 }
                             }
                             is_once_mql_history[i] = true;
+                            continue;
                         }
 
                         /* если параметры соответствуют, обновляем исторические данные */
                         if(close_candle) {
                             std::lock_guard<std::mutex> lock(mql_history_mutex);
-                            mql_history[i]->add_new_candle(candle);
-                            //if(symbol == "EURUSD(OTC)") std::cout << "add_new_candle " << xtime::get_str_date_time(candle.timestamp) << std::endl;
+                            mql_history[i]->add_new_candle_with_memory(candle);
                         } else {
                             std::lock_guard<std::mutex> lock(mql_history_mutex);
-                            mql_history[i]->update_candle(candle);
-                            //if(symbol == "EURUSD(OTC)") std::cout << "update_candle " << xtime::get_str_date_time(candle.timestamp) << std::endl;
+                            mql_history[i]->update_candle_with_memory(candle);
                         }
                     }
                 }
@@ -303,6 +311,9 @@ namespace binomo_bot {
             candlestick_streams->start();
             candlestick_streams->wait();
 
+            /* ждем, чтобы котировки прогрузились */
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
             /* загружаем исторические данные */
             for(size_t i = 0; i < settings.symbols.size(); ++i) {
                 const xtime::timestamp_t stop_date = xtime::get_first_timestamp_minute();
@@ -316,19 +327,8 @@ namespace binomo_bot {
                     /* добавляем все новые бары, за исключением последнего,
                      * так как он может быть изменен за время загрузки истории
                      */
-                    if(c < (candles.size() - 1)) mql_history[i]->add_new_candle(candle);
-                    else mql_history[i]->update_candle(candle);
-#               if(0)
-                    std::cout
-                        << settings.symbols[i].first
-                        //<< " o: " << candle.open
-                        << " c: " << candle.close
-                        //<< " h: " << candle.high
-                        //<< " l: " << candle.low
-                        << " v: " << candle.volume
-                        << " t: " << xtime::get_str_date_time(candle.timestamp)
-                        << std::endl;
-#               endif
+                    if(c < (candles.size() - 1)) mql_history[i]->add_new_candle_with_memory(candle);
+                    else mql_history[i]->update_candle_with_memory(candle); // добавили последний бар
                 }
 
                 /* ставим флаг инициализации исторических данных */

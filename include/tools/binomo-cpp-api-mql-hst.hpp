@@ -91,6 +91,7 @@ namespace binomo_api {
             return true;
         }
 
+        CANDLE last_candle;
     public:
 
         MqlHst() {};
@@ -129,9 +130,45 @@ namespace binomo_api {
             last_timestamp = candle.timestamp;
         }
 
+        void update_candle_with_memory(const CANDLE &candle) {
+            if(!is_open) return;
+
+            CANDLE new_candle;
+            if(last_timestamp != candle.timestamp) {
+                /* если бар новый, то просто берем новые данные */
+                last_candle = candle;
+            } else {
+                if(candle.high > last_candle.high) {
+                    last_candle.high = candle.high;
+                }
+                if(candle.low < last_candle.low) {
+                    last_candle.low = candle.low;
+                }
+                last_candle.close = candle.close;
+                last_candle.volume = candle.volume;
+            }
+            new_candle = last_candle;
+
+            seek(offset);
+            write_u32((uint32_t)((int64_t)candle.timestamp + timezone));
+            write_double(new_candle.open);
+            write_double(new_candle.low);
+            write_double(new_candle.high);
+            write_double(new_candle.close);
+            write_double(new_candle.volume);
+            file.flush();
+            last_timestamp = candle.timestamp;
+        }
+
         void add_new_candle(const CANDLE &candle) {
             if(!is_open) return;
             update_candle(candle);
+            offset = file.tellp();
+        }
+
+        void add_new_candle_with_memory(const CANDLE &candle) {
+            if(!is_open) return;
+            update_candle_with_memory(candle);
             offset = file.tellp();
         }
 
